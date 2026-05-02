@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Airfoil Polar Analysis Suite</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div style="font-family:var(--mono); font-size:0.8rem; color:var(--accent); letter-spacing:0.1em">ANALYZING POLAR DATA...</div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo-group">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5">
+        <path d="M2 15 C6 8 10 5 22 9" stroke-linecap="round"/>
+        <path d="M2 15 C6 12 14 14 22 9" stroke-linecap="round" stroke-dasharray="2 2"/>
+        <line x1="4" y1="18" x2="20" y2="18" stroke-opacity="0.3"/>
+        <line x1="12" y1="4" x2="12" y2="20" stroke-opacity="0.3"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Airfoil Polar Analysis Suite</h1>
+      <div class="subtitle">XFLR5 / Panel-Method Data Reduction</div>
+    </div>
+  </div>
+  <div class="status-bar">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">NO POLAR LOADED</span>
+  </div>
+</header>
+
+<!-- UPLOAD ZONE -->
+<div id="upload-zone" onclick="document.getElementById('file-input').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+  <input type="file" id="file-input" accept=".xlsx,.xls,.csv,.dat,.txt" onchange="handleFile(event)">
+  <div class="icon">✈</div>
+  <h2>Drop your aerodynamic data file here</h2>
+  <p>Supports <strong>XFLR5 CSV exports</strong> · <strong>Standard CSV/XLSX</strong><br>
+  <span style="font-size:0.75rem; opacity:0.7">Required minimum columns: alpha, CL, CD</span></p>
+  <button class="btn" onclick="event.stopPropagation(); document.getElementById('file-input').click()">
+    ⊕ &nbsp; SELECT FILE
+  </button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+
+  <!-- Info bar -->
+  <div class="info-bar">
+    <span class="file-name" id="file-name-display">—</span>
+    <div class="meta-info">
+      <span class="meta-tag" id="meta-airfoil">Airfoil</span>
+      <span class="meta-tag" id="meta-re" style="display:none; color:var(--accent2)">Re</span>
+      <span class="meta-tag" id="meta-mach" style="display:none; color:var(--accent4)">Mach</span>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <!-- Regime Bar -->
+  <div class="regime-bar" id="regime-bar" style="display:none">
+    <div class="regime-title">⬡ &nbsp; Aerodynamic Regime Classification</div>
+    <div class="regime-track">
+      <div class="regime-seg regime-attached" id="reg-attached">Fully Attached (Linear Region)</div>
+      <div class="regime-seg regime-separation" id="reg-transition">Trailing-Edge Separation</div>
+      <div class="regime-seg regime-stall" id="reg-stall">Post-Stall</div>
+    </div>
+    <div class="regime-labels">
+      <span id="reg-label-start">—</span>
+      <span id="reg-label-stall">Stall Onset ≈ —°</span>
+      <span id="reg-label-end">—</span>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="chart-grid-top">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">① &nbsp; Lift Coefficient vs. Angle of Attack</div>
+        <div class="chart-badge" id="badge-clmax">—</div>
+      </div>
+      <div class="chart-container"><canvas id="chart-cl"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">② &nbsp; Drag Coefficient vs. Angle of Attack</div>
+        <div class="chart-badge" id="badge-cdmin">—</div>
+      </div>
+      <div class="chart-container"><canvas id="chart-cd"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">③ &nbsp; Aerodynamic Efficiency (L/D) vs. α</div>
+        <div class="chart-badge" id="badge-ldmax">—</div>
+      </div>
+      <div class="chart-container"><canvas id="chart-ld"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="chart-grid-bottom">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">④ &nbsp; Drag Polar (C_L vs. C_D)</div>
+        <div class="chart-badge">POLAR</div>
+      </div>
+      <div class="chart-container tall"><canvas id="chart-polar"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">⑤ &nbsp; Pitching Moment Coefficient vs. α</div>
+        <div class="chart-badge">STABILITY</div>
+      </div>
+      <div class="chart-container tall"><canvas id="chart-cm"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">⑥ &nbsp; Stability Plot (C_m vs. C_L)</div>
+        <div class="chart-badge">STATIC MARGIN</div>
+      </div>
+      <div class="chart-container tall"><canvas id="chart-stability"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Tables -->
+  <div class="analysis-grid">
+    <div class="table-card">
+      <div class="chart-header" style="margin-bottom:14px">
+        <div class="chart-title">📋 &nbsp; Polar Data Matrix</div>
+      </div>
+      <div style="overflow-x:auto; max-height:320px; overflow-y:auto;">
+        <table id="data-table">
+          <thead><tr>
+            <th>α [deg]</th>
+            <th>C_L</th>
+            <th>C_D</th>
+            <th>C_m</th>
+            <th>L/D</th>
+          </tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="table-card">
+      <div class="chart-header" style="margin-bottom:14px">
+        <div class="chart-title">📊 &nbsp; Critical Aerodynamic Parameters</div>
+      </div>
+      <table id="kpp-table">
+        <thead><tr><th>Parameter</th><th>Value</th><th>Condition</th></tr></thead>
+        <tbody id="kpp-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<footer>AIRFOIL POLAR ANALYSIS SUITE &nbsp;·&nbsp; FASTAPI BACKEND &nbsp;·&nbsp; NUMERICAL ANALYSIS</footer>
+
+<script src="js/charts.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

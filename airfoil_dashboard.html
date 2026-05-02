@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Airfoil Analysis Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep:    #070c14;
+    --bg-panel:   #0c1420;
+    --bg-card:    #101b2e;
+    --bg-card2:   #0e1828;
+    --border:     #1c3050;
+    --border-hi:  #2a4a78;
+    --accent:     #00c8ff;
+    --accent2:    #00ff9d;
+    --accent3:    #ff6b35;
+    --accent4:    #bf5fff;
+    --accent5:    #ffd43b;
+    --text:       #d8e4f0;
+    --text-dim:   #5e7a99;
+    --text-label: #8aa8c8;
+    --red:        #ff4757;
+    --mono:       'Space Mono', monospace;
+    --sans:       'DM Sans', sans-serif;
+    --glow:       0 0 20px rgba(0,200,255,0.15);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,200,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,200,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(7,12,20,0.9);
+    backdrop-filter: blur(12px);
+  }
+
+  .logo-group { display:flex; align-items:center; gap:14px; }
+
+  .logo-icon {
+    width: 42px; height: 42px;
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    display: flex; align-items:center; justify-content:center;
+    box-shadow: var(--glow);
+    flex-shrink: 0;
+  }
+  .logo-icon svg { width:24px; height:24px; }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: 1rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .subtitle {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+
+  .status-bar {
+    display:flex; align-items:center; gap:8px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+  }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); }
+  .dot.live { background:var(--accent2); box-shadow: 0 0 8px var(--accent2); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── UPLOAD ZONE ── */
+  #upload-zone {
+    position: relative; z-index: 10;
+    margin: 32px auto;
+    max-width: 640px;
+    border: 2px dashed var(--border-hi);
+    border-radius: 16px;
+    padding: 48px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    background: rgba(16,26,46,0.6);
+  }
+  #upload-zone:hover, #upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,200,255,0.04);
+    box-shadow: var(--glow);
+  }
+  #upload-zone .icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.7; }
+  #upload-zone h2 { font-size: 1.1rem; color: var(--text); font-weight:500; margin-bottom:6px; }
+  #upload-zone p { font-size: 0.82rem; color: var(--text-dim); }
+  #file-input { display:none; }
+
+  .btn {
+    display: inline-flex; align-items:center; gap:8px;
+    margin-top: 18px;
+    padding: 10px 24px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: rgba(0,200,255,0.1); box-shadow: var(--glow); }
+
+  /* ── DASHBOARD ── */
+  #dashboard { display:none; position:relative; z-index:10; padding: 0 24px 48px; }
+
+  /* Info bar */
+  .info-bar {
+    display: flex; align-items:center; justify-content:space-between;
+    padding: 14px 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 24px;
+  }
+  .info-bar .file-name {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+  }
+  .info-bar .row-count {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  /* KPI Cards */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .kpi-card:hover { border-color: var(--border-hi); }
+  .kpi-card::after {
+    content:'';
+    position:absolute;
+    top:0; left:0; right:0;
+    height: 2px;
+    background: var(--kpi-color, var(--accent));
+  }
+  .kpi-label {
+    font-size: 0.68rem;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .kpi-value {
+    font-family: var(--mono);
+    font-size: 1.4rem;
+    color: var(--kpi-color, var(--accent));
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .kpi-sub {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Chart grid */
+  .chart-grid-top {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .chart-grid-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .chart-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    position: relative;
+  }
+  .chart-card:hover { border-color: var(--border-hi); }
+
+  .chart-header {
+    display: flex; align-items:flex-start; justify-content:space-between;
+    margin-bottom: 16px;
+  }
+  .chart-title {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-label);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .chart-badge {
+    font-size: 0.65rem;
+    font-family: var(--mono);
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(0,200,255,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(0,200,255,0.2);
+  }
+
+  .chart-container { position:relative; height: 240px; }
+  .chart-container.tall { height: 280px; }
+
+  /* Analysis Table */
+  .analysis-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .table-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    overflow: hidden;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    padding: 8px 12px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+  }
+  thead th:first-child { text-align: left; }
+  tbody tr { transition: background 0.15s; }
+  tbody tr:hover { background: rgba(0,200,255,0.04); }
+  tbody tr.highlight { background: rgba(0,255,157,0.06); }
+  tbody tr.stall-row { background: rgba(255,71,87,0.07); }
+  tbody td {
+    padding: 9px 12px;
+    text-align: right;
+    border-bottom: 1px solid rgba(28,48,80,0.5);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text);
+  }
+  tbody td:first-child { text-align: left; color: var(--text-label); }
+  .tag {
+    display: inline-block;
+    font-size: 0.6rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .tag-green { background: rgba(0,255,157,0.15); color: var(--accent2); }
+  .tag-red   { background: rgba(255,71,87,0.15); color: var(--red); }
+  .tag-blue  { background: rgba(0,200,255,0.15); color: var(--accent); }
+
+  /* Regime indicator */
+  .regime-bar {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 18px;
+  }
+  .regime-title {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .regime-track {
+    position: relative;
+    height: 32px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+  }
+  .regime-seg {
+    display: flex; align-items:center; justify-content:center;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: opacity 0.2s;
+  }
+  .regime-attached { background: linear-gradient(90deg, #0d3b2e, #0a4a38); color: var(--accent2); flex: 0 0 60%; }
+  .regime-separation { background: linear-gradient(90deg, #3a2800, #4a3300); color: var(--accent5); flex: 0 0 25%; }
+  .regime-stall { background: linear-gradient(90deg, #3a0f0f, #4a1515); color: var(--red); flex: 0 0 15%; }
+  .regime-labels {
+    display: flex; justify-content:space-between;
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+  }
+
+  footer {
+    position: relative; z-index:10;
+    text-align: center;
+    padding: 20px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+  }
+
+  /* Responsive */
+  @media(max-width:1200px) {
+    .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+    .chart-grid-top { grid-template-columns: 1fr 1fr; }
+  }
+  @media(max-width:768px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .chart-grid-top, .chart-grid-bottom, .analysis-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo-group">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5">
+        <path d="M2 15 C6 8 10 5 22 9" stroke-linecap="round"/>
+        <path d="M2 15 C6 12 14 14 22 9" stroke-linecap="round" stroke-dasharray="2 2"/>
+        <line x1="4" y1="18" x2="20" y2="18" stroke-opacity="0.3"/>
+        <line x1="12" y1="4" x2="12" y2="20" stroke-opacity="0.3"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Airfoil Analysis Dashboard</h1>
+      <div class="subtitle">Aerodynamic Performance · CFD Post-Processing</div>
+    </div>
+  </div>
+  <div class="status-bar">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">AWAITING DATA</span>
+  </div>
+</header>
+
+<!-- UPLOAD ZONE -->
+<div id="upload-zone" onclick="document.getElementById('file-input').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+  <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(event)">
+  <div class="icon">✈</div>
+  <h2>Drop your airfoil data file here</h2>
+  <p>Supports <strong>.xlsx</strong> · <strong>.xls</strong> · <strong>.csv</strong> — columns: <code style="color:var(--accent)">alpha &nbsp; CL &nbsp; CD &nbsp; Cm</code></p>
+  <button class="btn" onclick="event.stopPropagation(); document.getElementById('file-input').click()">
+    ⊕ &nbsp; SELECT FILE
+  </button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard">
+
+  <!-- Info bar -->
+  <div class="info-bar">
+    <span class="file-name" id="file-name-display">—</span>
+    <span class="row-count" id="row-count-display">—</span>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <!-- Regime Bar -->
+  <div class="regime-bar" id="regime-bar" style="display:none">
+    <div class="regime-title">⬡ &nbsp; Flow Regime Map</div>
+    <div class="regime-track">
+      <div class="regime-seg regime-attached" id="reg-attached">Attached Flow</div>
+      <div class="regime-seg regime-separation" id="reg-transition">Transition</div>
+      <div class="regime-seg regime-stall" id="reg-stall">Post-Stall</div>
+    </div>
+    <div class="regime-labels">
+      <span id="reg-label-start">—</span>
+      <span id="reg-label-stall">Stall ≈ —°</span>
+      <span id="reg-label-end">—</span>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="chart-grid-top">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">① &nbsp; Lift Curve &nbsp; C<sub>L</sub> vs α</div>
+        <div class="chart-badge" id="badge-clmax">—</div>
+      </div>
+      <div class="chart-container"><canvas id="chart-cl"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">② &nbsp; Drag Polar &nbsp; C<sub>D</sub> vs α</div>
+        <div class="chart-badge" id="badge-cdmin">—</div>
+      </div>
+      <div class="chart-container"><canvas id="chart-cd"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">③ &nbsp; Efficiency &nbsp; C<sub>L</sub>/C<sub>D</sub> vs α</div>
+        <div class="chart-badge" id="badge-ldmax">—</div>
+      </div>
+      <div class="chart-container"><canvas id="chart-ld"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="chart-grid-bottom">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">④ &nbsp; Airfoil Polar &nbsp; C<sub>L</sub> vs C<sub>D</sub></div>
+        <div class="chart-badge">POLAR</div>
+      </div>
+      <div class="chart-container tall"><canvas id="chart-polar"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">⑤ &nbsp; Pitching Moment &nbsp; C<sub>m</sub> vs α</div>
+        <div class="chart-badge" id="badge-cm">—</div>
+      </div>
+      <div class="chart-container tall"><canvas id="chart-cm"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Tables -->
+  <div class="analysis-grid">
+    <div class="table-card">
+      <div class="chart-header" style="margin-bottom:14px">
+        <div class="chart-title">📋 &nbsp; Full Data Table</div>
+      </div>
+      <div style="overflow-x:auto; max-height:320px; overflow-y:auto;">
+        <table id="data-table">
+          <thead><tr>
+            <th>α (°)</th>
+            <th>C<sub>L</sub></th>
+            <th>C<sub>D</sub></th>
+            <th>C<sub>m</sub></th>
+            <th>L/D</th>
+          </tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="table-card">
+      <div class="chart-header" style="margin-bottom:14px">
+        <div class="chart-title">📊 &nbsp; Key Performance Points</div>
+      </div>
+      <table id="kpp-table">
+        <thead><tr><th>Parameter</th><th>Value</th><th>At α</th></tr></thead>
+        <tbody id="kpp-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<footer>AIRFOIL ANALYSIS DASHBOARD &nbsp;·&nbsp; CHART.JS + SHEETJS &nbsp;·&nbsp; LOCAL EXECUTION</footer>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  CHART.JS DEFAULT CONFIG
+// ═══════════════════════════════════════════════════
+Chart.defaults.color = '#5e7a99';
+Chart.defaults.font.family = "'Space Mono', monospace";
+Chart.defaults.font.size = 10;
+
+const GRID_COLOR = 'rgba(28,48,80,0.6)';
+const TICK_COLOR = '#5e7a99';
+
+function baseOptions(xLabel, yLabel) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode:'index', intersect:false },
+    plugins: {
+      legend: { display:false },
+      tooltip: {
+        backgroundColor: '#0c1420',
+        borderColor: '#1c3050',
+        borderWidth: 1,
+        titleColor: '#00c8ff',
+        bodyColor: '#d8e4f0',
+        padding: 10,
+        callbacks: {
+          label: ctx => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(4)}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        title: { display:true, text:xLabel, color:'#8aa8c8', font:{size:10} },
+        grid: { color: GRID_COLOR },
+        ticks: { color: TICK_COLOR }
+      },
+      y: {
+        title: { display:true, text:yLabel, color:'#8aa8c8', font:{size:10} },
+        grid: { color: GRID_COLOR },
+        ticks: { color: TICK_COLOR }
+      }
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════
+//  FILE HANDLING
+// ═══════════════════════════════════════════════════
+let charts = {};
+
+function handleDragOver(e) { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag-over'); }
+function handleDragLeave(e) { document.getElementById('upload-zone').classList.remove('drag-over'); }
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (file) processFile(file);
+}
+
+function processFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+      validateAndRender(rows, file.name);
+    } catch(err) {
+      alert('Error reading file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function validateAndRender(rows, fileName) {
+  // Normalise column names (case-insensitive)
+  const normalised = rows.map(r => {
+    const nr = {};
+    for (const k of Object.keys(r)) nr[k.trim().toLowerCase()] = r[k];
+    return nr;
+  });
+
+  const req = ['alpha','cl','cd'];
+  for (const col of req) {
+    if (!(col in normalised[0])) {
+      alert(`Column "${col}" not found. Required columns: alpha, CL, CD, Cm`);
+      return;
+    }
+  }
+  const hasCm = 'cm' in normalised[0];
+
+  const parsed = normalised
+    .filter(r => r.alpha !== null && r.cl !== null && r.cd !== null)
+    .map(r => ({
+      alpha: parseFloat(r.alpha),
+      CL: parseFloat(r.cl),
+      CD: parseFloat(r.cd),
+      Cm: hasCm ? parseFloat(r.cm) : null
+    }))
+    .filter(r => !isNaN(r.alpha) && !isNaN(r.CL) && !isNaN(r.CD))
+    .sort((a,b) => a.alpha - b.alpha);
+
+  if (parsed.length < 3) { alert('Not enough valid data rows (min 3 required).'); return; }
+
+  renderDashboard(parsed, fileName);
+}
+
+// ═══════════════════════════════════════════════════
+//  ANALYTICS
+// ═══════════════════════════════════════════════════
+function analyse(data) {
+  // CL max and stall angle
+  let clMaxIdx = 0;
+  data.forEach((d,i) => { if(d.CL > data[clMaxIdx].CL) clMaxIdx = i; });
+  const stallAlpha = data[clMaxIdx].alpha;
+  const CLmax = data[clMaxIdx].CL;
+
+  // CD min
+  let cdMinIdx = 0;
+  data.forEach((d,i) => { if(d.CD < data[cdMinIdx].CD) cdMinIdx = i; });
+  const CDmin = data[cdMinIdx].CD;
+
+  // Best L/D
+  const LD = data.map(d => ({ alpha:d.alpha, ld: d.CL/d.CD }));
+  let ldMaxIdx = 0;
+  LD.forEach((d,i) => { if(d.ld > LD[ldMaxIdx].ld) ldMaxIdx = i; });
+  const LDmax = LD[ldMaxIdx].ld;
+  const LDmaxAlpha = LD[ldMaxIdx].alpha;
+
+  // Zero-lift alpha (linear interpolation)
+  let zeroLiftAlpha = null;
+  for (let i=0; i<data.length-1; i++) {
+    if (data[i].CL<=0 && data[i+1].CL>0) {
+      const t = -data[i].CL / (data[i+1].CL - data[i].CL);
+      zeroLiftAlpha = data[i].alpha + t*(data[i+1].alpha - data[i].alpha);
+      break;
+    }
+  }
+
+  // Cm at zero lift
+  let CmZeroLift = null;
+  if (zeroLiftAlpha !== null) {
+    for (let i=0; i<data.length-1; i++) {
+      if (data[i].Cm !== null && data[i+1].Cm !== null &&
+          data[i].alpha <= zeroLiftAlpha && data[i+1].alpha >= zeroLiftAlpha) {
+        const t = (zeroLiftAlpha - data[i].alpha) / (data[i+1].alpha - data[i].alpha);
+        CmZeroLift = data[i].Cm + t*(data[i+1].Cm - data[i].Cm);
+        break;
+      }
+    }
+  }
+
+  // Lift-curve slope (linear region: below stall)
+  const linearData = data.filter(d => d.alpha < stallAlpha - 3 && d.alpha > (data[0].alpha + 1));
+  let CLalpha = null;
+  if (linearData.length >= 2) {
+    const n = linearData.length;
+    const sumX = linearData.reduce((s,d)=>s+d.alpha,0);
+    const sumY = linearData.reduce((s,d)=>s+d.CL,0);
+    const sumXY = linearData.reduce((s,d)=>s+d.alpha*d.CL,0);
+    const sumX2 = linearData.reduce((s,d)=>s+d.alpha*d.alpha,0);
+    CLalpha = (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX); // per degree
+  }
+
+  return { CLmax, stallAlpha, cdMinIdx, CDmin, LDmax, LDmaxAlpha, zeroLiftAlpha, CmZeroLift, CLalpha, clMaxIdx };
+}
+
+// ═══════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════
+function renderDashboard(data, fileName) {
+  document.getElementById('upload-zone').style.display = 'none';
+  const dash = document.getElementById('dashboard');
+  dash.style.display = 'block';
+
+  document.getElementById('file-name-display').textContent = '⊡ ' + fileName;
+  document.getElementById('row-count-display').textContent = data.length + ' data points';
+  document.getElementById('status-dot').classList.add('live');
+  document.getElementById('status-text').textContent = 'DATA LOADED';
+
+  const stats = analyse(data);
+  const alpha = data.map(d=>d.alpha);
+  const CL    = data.map(d=>d.CL);
+  const CD    = data.map(d=>d.CD);
+  const LD    = data.map(d=>+(d.CL/d.CD).toFixed(4));
+  const Cm    = data.map(d=>d.Cm);
+  const hasCm = Cm[0] !== null;
+
+  // KPI Cards
+  const kpis = [
+    { label:'CL MAX', value: stats.CLmax.toFixed(3), sub:'Stall @ '+stats.stallAlpha+'°', color:'var(--accent2)', key:'--kpi-color' },
+    { label:'STALL α', value: stats.stallAlpha+'°', sub:'AoA at max lift', color:'var(--red)' },
+    { label:'CD MIN', value: stats.CDmin.toFixed(4), sub:'Min drag point', color:'var(--accent)' },
+    { label:'L/D MAX', value: stats.LDmax.toFixed(1), sub:'@ α = '+stats.LDmaxAlpha+'°', color:'var(--accent5)' },
+    { label:'ZERO-LIFT α', value: stats.zeroLiftAlpha !== null ? stats.zeroLiftAlpha.toFixed(1)+'°' : 'N/A', sub:'CL = 0 crossing', color:'var(--accent4)' },
+    { label:'dCL/dα', value: stats.CLalpha !== null ? stats.CLalpha.toFixed(3)+'/°' : 'N/A', sub:'Lift-curve slope', color:'var(--accent3)' },
+  ];
+  const grid = document.getElementById('kpi-grid');
+  grid.innerHTML = '';
+  kpis.forEach(k => {
+    grid.innerHTML += `<div class="kpi-card" style="--kpi-color:${k.color}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>`;
+  });
+
+  // Regime bar
+  document.getElementById('regime-bar').style.display = 'block';
+  document.getElementById('reg-label-start').textContent = alpha[0]+'°';
+  document.getElementById('reg-label-stall').textContent = 'Stall ≈ '+stats.stallAlpha+'°';
+  document.getElementById('reg-label-end').textContent = alpha[alpha.length-1]+'°';
+
+  // Badges
+  document.getElementById('badge-clmax').textContent = 'CLmax = '+stats.CLmax.toFixed(3);
+  document.getElementById('badge-cdmin').textContent = 'CDmin = '+stats.CDmin.toFixed(4);
+  document.getElementById('badge-ldmax').textContent = 'L/D max = '+stats.LDmax.toFixed(1);
+  if(hasCm) document.getElementById('badge-cm').textContent = stats.CmZeroLift ? 'Cm₀ ≈ '+stats.CmZeroLift.toFixed(3) : 'Cm data';
+
+  // Destroy old charts
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  // ── Chart 1: CL vs alpha ──
+  const stallAnnotation = {
+    type:'line', xMin:stats.stallAlpha, xMax:stats.stallAlpha,
+    borderColor:'rgba(255,71,87,0.5)', borderWidth:1.5, borderDash:[4,3],
+    label:{ content:'Stall', display:true, color:'#ff4757', backgroundColor:'transparent', font:{family:'Space Mono',size:9} }
+  };
+
+  charts.cl = new Chart(document.getElementById('chart-cl'), {
+    type:'line',
+    data:{
+      labels:alpha,
+      datasets:[{
+        label:'CL', data:CL,
+        borderColor:'#00c8ff', borderWidth:2,
+        backgroundColor:'rgba(0,200,255,0.06)',
+        fill:true, tension:0.35,
+        pointBackgroundColor: alpha.map(a => a===stats.stallAlpha ? '#ff4757' : '#00c8ff'),
+        pointRadius: alpha.map(a => a===stats.stallAlpha ? 6 : 3),
+      }]
+    },
+    options:{
+      ...baseOptions('α (°)','CL'),
+      plugins:{
+        ...baseOptions().plugins,
+        annotation:{ annotations:{ stallLine: stallAnnotation } },
+        tooltip:{
+          backgroundColor:'#0c1420', borderColor:'#1c3050', borderWidth:1,
+          titleColor:'#00c8ff', bodyColor:'#d8e4f0', padding:10,
+          callbacks:{ label: ctx => ` CL: ${Number(ctx.parsed.y).toFixed(4)}` }
+        },
+        legend:{display:false}
+      }
+    }
+  });
+
+  // ── Chart 2: CD vs alpha ──
+  charts.cd = new Chart(document.getElementById('chart-cd'), {
+    type:'line',
+    data:{
+      labels:alpha,
+      datasets:[{
+        label:'CD', data:CD,
+        borderColor:'#ff6b35', borderWidth:2,
+        backgroundColor:'rgba(255,107,53,0.06)',
+        fill:true, tension:0.35,
+        pointRadius:3, pointBackgroundColor:'#ff6b35'
+      }]
+    },
+    options:{
+      ...baseOptions('α (°)','CD'),
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#0c1420', borderColor:'#1c3050', borderWidth:1,
+          titleColor:'#ff6b35', bodyColor:'#d8e4f0', padding:10,
+          callbacks:{ label: ctx => ` CD: ${Number(ctx.parsed.y).toFixed(5)}` }
+        }
+      }
+    }
+  });
+
+  // ── Chart 3: L/D vs alpha ──
+  charts.ld = new Chart(document.getElementById('chart-ld'), {
+    type:'line',
+    data:{
+      labels:alpha,
+      datasets:[{
+        label:'L/D', data:LD,
+        borderColor:'#ffd43b', borderWidth:2,
+        backgroundColor:'rgba(255,212,59,0.06)',
+        fill:true, tension:0.35,
+        pointRadius: alpha.map(a => a===stats.LDmaxAlpha ? 7 : 3),
+        pointBackgroundColor: alpha.map(a => a===stats.LDmaxAlpha ? '#ffd43b' : '#b09a25'),
+      }]
+    },
+    options:{
+      ...baseOptions('α (°)','CL / CD'),
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#0c1420', borderColor:'#1c3050', borderWidth:1,
+          titleColor:'#ffd43b', bodyColor:'#d8e4f0', padding:10,
+          callbacks:{ label: ctx => ` L/D: ${Number(ctx.parsed.y).toFixed(2)}` }
+        }
+      }
+    }
+  });
+
+  // ── Chart 4: Polar (CL vs CD) ──
+  const polarData = data.map(d=>({ x: d.CD, y: d.CL }));
+  charts.polar = new Chart(document.getElementById('chart-polar'), {
+    type:'scatter',
+    data:{
+      datasets:[{
+        label:'Polar', data:polarData,
+        borderColor:'#00ff9d', backgroundColor:'rgba(0,255,157,0.08)',
+        borderWidth:1.5, pointRadius:4, showLine:true, tension:0.3
+      }]
+    },
+    options:{
+      ...baseOptions('CD','CL'),
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#0c1420', borderColor:'#1c3050', borderWidth:1,
+          titleColor:'#00ff9d', bodyColor:'#d8e4f0', padding:10,
+          callbacks:{
+            title: items => `α = ${data[items[0].dataIndex].alpha}°`,
+            label: ctx => ` CD: ${ctx.parsed.x.toFixed(5)}  CL: ${ctx.parsed.y.toFixed(4)}`
+          }
+        }
+      }
+    }
+  });
+
+  // ── Chart 5: Cm vs alpha ──
+  if (hasCm) {
+    charts.cm = new Chart(document.getElementById('chart-cm'), {
+      type:'line',
+      data:{
+        labels:alpha,
+        datasets:[{
+          label:'Cm', data:Cm,
+          borderColor:'#bf5fff', borderWidth:2,
+          backgroundColor:'rgba(191,95,255,0.06)',
+          fill:true, tension:0.35,
+          pointRadius:3, pointBackgroundColor:'#bf5fff'
+        }]
+      },
+      options:{
+        ...baseOptions('α (°)','Cm'),
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#0c1420', borderColor:'#1c3050', borderWidth:1,
+            titleColor:'#bf5fff', bodyColor:'#d8e4f0', padding:10,
+            callbacks:{ label: ctx => ` Cm: ${Number(ctx.parsed.y).toFixed(4)}` }
+          },
+          annotation:{ annotations:{
+            zeroLine:{
+              type:'line', yMin:0, yMax:0,
+              borderColor:'rgba(255,255,255,0.12)', borderWidth:1, borderDash:[4,4]
+            }
+          }}
+        }
+      }
+    });
+  } else {
+    document.getElementById('chart-cm').parentElement.parentElement.style.opacity='0.35';
+    document.getElementById('chart-cm').parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:0.8rem;font-family:var(--mono)">No Cm data in file</div>';
+  }
+
+  // ── Data Table ──
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+  data.forEach((d,i) => {
+    const ld = (d.CL/d.CD).toFixed(2);
+    const isMax = i === stats.clMaxIdx;
+    const isLD  = d.alpha === stats.LDmaxAlpha;
+    let tag = '';
+    if(isMax) tag = '<span class="tag tag-red">STALL</span>';
+    else if(isLD) tag = '<span class="tag tag-green">BEST L/D</span>';
+    tbody.innerHTML += `<tr class="${isMax?'stall-row':isLD?'highlight':''}">
+      <td>${d.alpha}°${tag}</td>
+      <td>${d.CL.toFixed(4)}</td>
+      <td>${d.CD.toFixed(5)}</td>
+      <td>${d.Cm !== null ? d.Cm.toFixed(4) : '—'}</td>
+      <td>${ld}</td>
+    </tr>`;
+  });
+
+  // ── KPP Table ──
+  const kppBody = document.getElementById('kpp-body');
+  kppBody.innerHTML = '';
+  const kpps = [
+    ['CLmax',         stats.CLmax.toFixed(4),    stats.stallAlpha+'°', 'tag-red'],
+    ['CLmin',         Math.min(...CL).toFixed(4), data[CL.indexOf(Math.min(...CL))].alpha+'°', 'tag-blue'],
+    ['CDmin',         stats.CDmin.toFixed(5),     data[stats.cdMinIdx].alpha+'°', 'tag-blue'],
+    ['CDmax',         Math.max(...CD).toFixed(5), data[CD.indexOf(Math.max(...CD))].alpha+'°', ''],
+    ['(L/D)max',      stats.LDmax.toFixed(2),     stats.LDmaxAlpha+'°', 'tag-green'],
+    ['Zero-lift α',   stats.zeroLiftAlpha !== null ? stats.zeroLiftAlpha.toFixed(2)+'°' : 'N/A', '—', ''],
+    ['dCL/dα',        stats.CLalpha !== null ? stats.CLalpha.toFixed(4)+' /°' : 'N/A', 'Linear region', ''],
+  ];
+  if(hasCm && stats.CmZeroLift !== null) {
+    kpps.push(['Cm₀ (zero-lift)', stats.CmZeroLift.toFixed(4), stats.zeroLiftAlpha?.toFixed(1)+'°', '']);
+  }
+  kpps.forEach(([param, val, at, tagClass]) => {
+    kppBody.innerHTML += `<tr>
+      <td>${param}</td>
+      <td style="color:var(--accent)">${val}</td>
+      <td>${at}${tagClass ? '<span class="tag '+tagClass+'">key</span>' : ''}</td>
+    </tr>`;
+  });
+}
+</script>
+</body>
+</html>
